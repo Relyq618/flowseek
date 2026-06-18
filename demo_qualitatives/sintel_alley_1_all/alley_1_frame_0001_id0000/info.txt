@@ -1,0 +1,7 @@
+id: 0
+scene: alley_1
+frame_idx: 0
+image1: data/MPI-Sintel/training/final/alley_1/frame_0001.png
+image2: data/MPI-Sintel/training/final/alley_1/frame_0002.png
+flow_gt: data/MPI-Sintel/training/flow/alley_1/frame_0001.flo
+flow_gt_viz: data/MPI-Sintel/training/flow_viz/alley_1/frame_0001.png
