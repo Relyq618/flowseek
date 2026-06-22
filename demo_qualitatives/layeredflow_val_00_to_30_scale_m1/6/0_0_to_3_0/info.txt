@@ -1,0 +1,6 @@
+scene: 6
+image1: /home/amemiyq/layeredflow/val/6/0_0.png
+image2: /home/amemiyq/layeredflow/val/6/3_0.png
+cfg: config/eval/flowseek-T.json
+model: weights/flowseek_T_TartanCT_TSKH.pth
+scale: -1

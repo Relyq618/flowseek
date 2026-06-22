@@ -35,3 +35,11 @@ wandb/
 .vscode/
 .idea/
 .DS_Store
+# Ignore qualitative outputs by default
+demo_qualitatives/*
+
+# Keep selected Sintel alley sample only
+!demo_qualitatives/sintel_alley_1_all/
+demo_qualitatives/sintel_alley_1_all/*
+!demo_qualitatives/sintel_alley_1_all/alley_1_frame_0001_id0000/
+!demo_qualitatives/sintel_alley_1_all/alley_1_frame_0001_id0000/**
