@@ -27,8 +27,20 @@ from utils.utils import load_ckpt
 
 def expand_flow_head_weights(state_dict, num_layers):
     """
-    Convert original single-head FlowSeek checkpoint keys to
-    multi-head FlowSeek keys.
+    Convert original single-context / single-head FlowSeek checkpoint keys to
+    multi-context / multi-head FlowSeek keys.
+
+    Original keys:
+        cnet.*
+        flow_head.*
+
+    New keys:
+        cnets.0.*
+        cnets.1.*
+        ...
+        flow_heads.0.*
+        flow_heads.1.*
+        ...
     """
     expanded_state_dict = {}
 
@@ -45,10 +57,18 @@ def expand_flow_head_weights(state_dict, num_layers):
                 new_key = f"flow_heads.{layer_idx}.{suffix}"
                 expanded_state_dict[new_key] = value.clone()
 
+        elif clean_key.startswith("cnet."):
+            suffix = clean_key[len("cnet."):]
+
+            for layer_idx in range(num_layers):
+                new_key = f"cnets.{layer_idx}.{suffix}"
+                expanded_state_dict[new_key] = value.clone()
+
         else:
             expanded_state_dict[clean_key] = value
 
     return expanded_state_dict
+
 
 
 def load_ckpt_multihead(model, ckpt_path):
@@ -277,6 +297,18 @@ def demo_data(name, args, model, image1, image2, flow_gt, val=None):
     #   [B, L, 2, H, W]
     print("multi-layer flow shape:", flow.shape)
 
+    if flow.shape[1] >= 2:
+        for idx in range(1, flow.shape[1]):
+            diff = torch.norm(
+                flow[:, idx] - flow[:, 0],
+                dim=1,
+            ).mean()
+
+            print(
+                f"Mean flow difference layer {idx} vs layer 0:",
+                diff.item(),
+            )
+
     num_layers = flow.shape[1]
     layer_idx = min(args.layer_idx, num_layers - 1)
 
@@ -366,6 +398,7 @@ def demo_data(name, args, model, image1, image2, flow_gt, val=None):
                     layer_idx,
                     epe[0].mean().cpu().item(),
                 )
+    
             )
 
 @torch.no_grad()

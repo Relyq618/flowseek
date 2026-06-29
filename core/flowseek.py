@@ -25,13 +25,26 @@ class FlowSeek(
         super().__init__()
         self.args = args
         self.output_dim = args.dim * 2
+        self.num_layers = getattr(args, "num_layers", 4)
 
         self.da_size = args.da_size
+
 
         self.args.corr_levels = 4
         self.args.corr_radius = args.radius
         self.args.corr_channel = args.corr_levels * (args.radius * 2 + 1) ** 2
-        self.cnet = ResNetFPN(args, input_dim=6, output_dim=2 * self.args.dim, norm_layer=nn.BatchNorm2d, init_weight=True)
+       
+        self.cnets = nn.ModuleList([
+            ResNetFPN(
+                args,
+                input_dim=6,
+                output_dim=2 * self.args.dim,
+                norm_layer=nn.BatchNorm2d,
+                init_weight=True,
+            )
+            for _ in range(self.num_layers)
+        ])
+
 
         self.da_model_configs = {
             'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
@@ -63,7 +76,6 @@ class FlowSeek(
             nn.ReLU(inplace=True),
             nn.Conv2d(args.dim * 2, 64 * 9, 1, padding=0)
         )
-        self.num_layers = getattr(args, "num_layers", 4)
 
         self.flow_heads = nn.ModuleList([
             nn.Sequential(
@@ -232,30 +244,58 @@ class FlowSeek(
         cnet_inputs = torch.cat([image1, image2], dim=1)
         # if self.use_da:
             
+        #Context Network -> Layer-specific
+        layer_nets = []
+        layer_contexts = []
 
-        cnet = self.cnet(cnet_inputs)
-        
-        cnet = self.init_conv(cnet)
-        net, context = torch.split(cnet, [self.args.dim, self.args.dim], dim=1)
-                
+        for layer_idx in range(self.num_layers):
+            cnet = self.cnets[layer_idx](cnet_inputs)
+
+            cnet = self.init_conv(cnet)
+
+            net_img, context_img = torch.split(
+                cnet,
+                [self.args.dim, self.args.dim],
+                dim=1,
+            )
+
+            layer_nets.append(net_img)
+            layer_contexts.append(context_img)
+
         bnet_inputs = bases1[0]
         bnet = self.bnet(bnet_inputs)
         bnet = self.init_conv(bnet)
-        netbases, ctxbases = torch.split(bnet, [self.args.dim, self.args.dim], dim=1)
 
-        context = torch.cat((context, ctxbases), 1)
-        net = torch.cat((net, netbases), 1)
+        netbases, ctxbases = torch.split(
+            bnet,
+            [self.args.dim, self.args.dim],
+            dim=1,
+        )
 
-        # init flow for each layer
-        nets = [
-            net.clone()
-            for _ in range(self.num_layers)
-        ]
+        # init hidden state and context for each layer
+        nets = []
+        contexts = []
 
-        contexts = [
-            context
-            for _ in range(self.num_layers)
-        ]
+        for layer_idx in range(self.num_layers):
+            net_k = torch.cat(
+                (
+                    layer_nets[layer_idx],
+                    netbases,
+                ),
+                dim=1,
+            )
+
+            context_k = torch.cat(
+                (
+                    layer_contexts[layer_idx],
+                    ctxbases,
+                ),
+                dim=1,
+            )
+
+            nets.append(net_k)
+            contexts.append(context_k)
+
 
         flow_8xs = []
         info_8xs = []
