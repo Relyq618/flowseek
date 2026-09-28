@@ -1,0 +1,42 @@
+{
+    "name": "flowseek_T_blender_layered_backward_1sample",
+    "dataset": "blender_layered_backward",
+    "gpus": [0],
+
+    "use_var": true,
+    "var_min": 0,
+    "var_max": 10,
+    "pretrain": "resnet18",
+    "initial_dim": 64,
+    "block_dims": [64, 128, 256],
+    "radius": 4,
+    "dim": 128,
+    "num_blocks": 2,
+    "iters": 4,
+
+    "num_layers": 4,
+    "camera_id": 0,
+    "max_samples": 1,
+    "min_layer_mask_ratios": [0.0, 0.03, 0.01, 0.01],
+
+    "image_size": [432, 960],
+    "scale": 0,
+    "batch_size": 1,
+    "epsilon": 1e-8,
+    "lr": 1e-5,
+    "wdecay": 1e-5,
+    "dropout": 0,
+    "clip": 1.0,
+    "gamma": 0.85,
+    "num_steps": 300,
+
+    "da_size": "vits",
+
+    "finetune_mode": "cnets_flow_heads_only",
+    "freeze_dav2": true,
+    "freeze_fnet": true,
+    "freeze_bnet": true,
+    "freeze_update_block": true,
+    "freeze_merge_head": true,
+    "freeze_upsample_weight": true
+}

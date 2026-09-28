@@ -268,6 +268,152 @@ class LayeredFlow(data.Dataset):
 
         return img1, img2, coords, flows, materials, layers
 
+class BlenderLayeredBackward(data.Dataset):
+    """
+    Blender synthetic multi-layer backward flow dataset.
+
+    This dataset uses:
+        image1 = frame1/image_{camera_id}.png
+        image2 = frame0/image_{camera_id}.png
+
+    and supervises:
+        flow_gt = frame1/data_{camera_id}.npz["denoising_vector_map"][:, :, :, 0:2]
+
+    The direction is:
+        frame1 -> frame0
+    """
+
+    def __init__(
+        self,
+        root,
+        num_layers=4,
+        camera_id=0,
+        min_layer_mask_ratios=None,
+        max_samples=None,
+    ):
+        super(BlenderLayeredBackward, self).__init__()
+
+        self.root = root
+        self.num_layers = num_layers
+        self.camera_id = camera_id
+
+        if min_layer_mask_ratios is None:
+            self.min_layer_mask_ratios = [0.0, 0.03, 0.01, 0.01]
+        else:
+            self.min_layer_mask_ratios = min_layer_mask_ratios
+
+        self.samples = []
+
+        sample_dirs = sorted(glob(osp.join(self.root, "*")))
+
+        for sample_dir in sample_dirs:
+            if not osp.isdir(sample_dir):
+                continue
+
+            frame0_dir = osp.join(sample_dir, "frame0")
+            frame1_dir = osp.join(sample_dir, "frame1")
+
+            if not osp.isdir(frame0_dir) or not osp.isdir(frame1_dir):
+                continue
+
+            image1_path = osp.join(
+                frame1_dir,
+                f"image_{self.camera_id}.png",
+            )
+
+            image2_path = osp.join(
+                frame0_dir,
+                f"image_{self.camera_id}.png",
+            )
+
+            data1_path = osp.join(
+                frame1_dir,
+                f"data_{self.camera_id}.npz",
+            )
+
+            if (
+                osp.exists(image1_path)
+                and osp.exists(image2_path)
+                and osp.exists(data1_path)
+            ):
+                self.samples.append(
+                    {
+                        "sample_dir": sample_dir,
+                        "image1": image1_path,
+                        "image2": image2_path,
+                        "data1": data1_path,
+                    }
+                )
+
+        if max_samples is not None:
+            self.samples = self.samples[:max_samples]
+
+        if len(self.samples) == 0:
+            raise RuntimeError(
+                f"No valid BlenderLayeredBackward samples found in {self.root}"
+            )
+
+        print(
+            "BlenderLayeredBackward:",
+            len(self.samples),
+            "samples found in",
+            self.root,
+        )
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        sample = self.samples[index]
+
+        img1 = frame_utils.read_gen(sample["image1"])
+        img2 = frame_utils.read_gen(sample["image2"])
+
+        img1 = np.array(img1).astype(np.uint8)[..., :3]
+        img2 = np.array(img2).astype(np.uint8)[..., :3]
+
+        data1 = np.load(
+            sample["data1"],
+            allow_pickle=True,
+        )
+
+        vector_map = data1["denoising_vector_map"].astype(np.float32)
+        mask_map = data1["denoising_mask_map"].astype(np.float32)
+
+        # vector_map:
+        #   [K, H, W, 4]
+        #
+        # backward vector:
+        #   vector_map[:, :, :, 0:2]
+        #
+        # flow_gt:
+        #   [K, H, W, 2]
+        flow_gt = vector_map[:self.num_layers, :, :, 0:2].copy()
+
+        # valid:
+        #   [K, H, W]
+        valid = mask_map[:self.num_layers] > 0.5
+
+        # Remove layers whose valid area is too small.
+        for layer_idx in range(self.num_layers):
+            mask_ratio = valid[layer_idx].mean()
+
+            threshold = self.min_layer_mask_ratios[layer_idx]
+
+            if mask_ratio < threshold:
+                valid[layer_idx] = False
+
+        flow_gt[~np.isfinite(flow_gt)] = 0.0
+        flow_gt[np.abs(flow_gt) > 1e9] = 0.0
+
+        img1 = torch.from_numpy(img1).permute(2, 0, 1).float()
+        img2 = torch.from_numpy(img2).permute(2, 0, 1).float()
+
+        flow_gt = torch.from_numpy(flow_gt).permute(0, 3, 1, 2).float()
+        valid = torch.from_numpy(valid).float()
+
+        return img1, img2, flow_gt, valid
+
 class KITTI(FlowDataset):
     def __init__(self, aug_params=None, split='training', root='data/kitti/'):
         super(KITTI, self).__init__(aug_params, sparse=True)
@@ -581,6 +727,19 @@ def fetch_dataloader(args, rank=0, world_size=1, use_ddp=False):
     elif args.dataset == 'tartanair':
         aug_params = {'crop_size': args.image_size, 'min_scale': args.scale - 0.2, 'max_scale': args.scale + 0.4, 'do_flip': True}
         train_dataset = TartanAir(aug_params, root=args.paths['tartanair'])
+
+    elif args.dataset == 'blender_layered_backward':
+        train_dataset = BlenderLayeredBackward(
+            root=args.paths['blender_layered_backward'],
+            num_layers=getattr(args, "num_layers", 4),
+            camera_id=getattr(args, "camera_id", 0),
+            min_layer_mask_ratios=getattr(
+                args,
+                "min_layer_mask_ratios",
+                [0.0, 0.03, 0.01, 0.01],
+            ),
+            max_samples=getattr(args, "max_samples", None),
+        )
     
     elif args.dataset == 'TSKH':
         aug_params = {'crop_size': args.image_size, 'min_scale': args.scale - 0.2, 'max_scale': args.scale + 0.6, 'do_flip': True}

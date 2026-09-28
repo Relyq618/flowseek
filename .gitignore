@@ -43,3 +43,7 @@ demo_qualitatives/*
 demo_qualitatives/sintel_alley_1_all/*
 !demo_qualitatives/sintel_alley_1_all/alley_1_frame_0001_id0000/
 !demo_qualitatives/sintel_alley_1_all/alley_1_frame_0001_id0000/**
+
+# Training checkpoints
+checkpoints/
+*.pth
